@@ -8,7 +8,8 @@
 #   - Persistence layer data.json (load/save)
 #   - Engine kalkulasi kesehatan finansial (HIJAU / KUNING / MERAH)
 # Kontrak antar-modul:
-#   - wallet["transactions"]   : list dict pengeluaran harian (modul Adriel)
+#   - wallet["transactions"]   : list dict riwayat pemasukan/pengeluaran (Lead)
+#   - wallet["daily_expenses"] : list dict belanja harian (modul Adriel)
 #   - wallet["monthly_bills"]  : list dict tagihan bulanan (modul Darell)
 #   - wallet["income"]         : float total pemasukan terkonsolidasi
 # ==============================================================================
@@ -83,9 +84,10 @@ def init_wallet():
       (transactions), sehingga semua developer memakai satu sumber data.
     """
     return {
-        "transactions": [],   # list dict   -> pengeluaran harian (Dev 1: Adriel)
-        "monthly_bills": [],  # list dict   -> tagihan bulanan (Dev 2: Darell)
-        "income": 0.0,        # float       -> total pemasukan terkonsolidasi (Lead)
+        "transactions": [],      # list dict   -> riwayat income/expense (Lead)
+        "daily_expenses": [],    # list dict   -> belanja harian (Dev 1: Adriel)
+        "monthly_bills": [],     # list dict   -> tagihan bulanan (Dev 2: Darell)
+        "income": 0.0,           # float       -> total pemasukan terkonsolidasi (Lead)
         "last_reset_month": None,  # str "YYYY-MM" -> penanda reset status tagihan tiap bulan
     }
 
@@ -111,6 +113,7 @@ def load_data(path="data.json"):
     wallet = init_wallet()
     wallet.update(data or {})
     wallet.setdefault("transactions", [])
+    wallet.setdefault("daily_expenses", [])
     wallet.setdefault("monthly_bills", [])
     wallet.setdefault("income", 0.0)
     wallet.setdefault("last_reset_month", None)
@@ -153,6 +156,21 @@ def sanitize_wallet(wallet):
             else:
                 log(f"transactions item #{i} rusak, dilewati.")
         wallet["transactions"] = kept
+
+    # --- daily_expenses: harus list, item dict dgn amount angka finite ---
+    if not isinstance(wallet.get("daily_expenses"), list):
+        log("daily_expenses bukan list -> direset []")
+        wallet["daily_expenses"] = []
+    else:
+        kept = []
+        for i, tx in enumerate(wallet["daily_expenses"]):
+            amt = tx.get("amount") if isinstance(tx, dict) else None
+            if isinstance(tx, dict) and isinstance(amt, (int, float)) \
+                    and not isinstance(amt, bool) and math.isfinite(amt):
+                kept.append(tx)
+            else:
+                log(f"daily_expenses item #{i} rusak, dilewati.")
+        wallet["daily_expenses"] = kept
 
     # --- monthly_bills: harus list, item dict lengkap & tipe benar ---
     if not isinstance(wallet.get("monthly_bills"), list):
@@ -258,6 +276,12 @@ def get_totals(wallet):
         tx["amount"] for tx in wallet.get("transactions", [])
         if isinstance(tx, dict) and tx.get("type") == "expense"
         and isinstance(tx.get("amount"), (int, float))
+    )
+
+    # Konsolidasi belanja harian (modul Adriel, key daily_expenses)
+    total_expense += sum(
+        e["amount"] for e in wallet.get("daily_expenses", [])
+        if isinstance(e, dict) and isinstance(e.get("amount"), (int, float))
     )
 
     # Konsolidasi komitmen tagihan bulanan (dari modul Darell)
@@ -389,7 +413,7 @@ if __name__ == "__main__":
 
     # 1) Inisialisasi skema
     w = init_wallet()
-    assert w == {"transactions": [], "monthly_bills": [], "income": 0.0, "last_reset_month": None}
+    assert w == {"transactions": [], "daily_expenses": [], "monthly_bills": [], "income": 0.0, "last_reset_month": None}
 
     # 2) Konsolidasi pemasukan
     ok, msg = add_income(w, 5000000, "Gaji")
@@ -397,6 +421,7 @@ if __name__ == "__main__":
 
     # 3) Simulasi pengeluaran (format transaksi modul Adriel)
     w["transactions"].append({"type": "expense", "amount": 500000})
+    w["daily_expenses"].append({"exp_id": 1, "date": "2026-09-20", "category": "Makan", "item_name": "Nasi", "amount": 250000})
     # 4) Simulasi tagihan (modul Darell): 1 lunas, 1 belum
     w["monthly_bills"] = [
         {"bill_id": 1, "bill_name": "Listrik", "amount": 300000, "due_day": 5, "is_paid": True},
@@ -406,18 +431,18 @@ if __name__ == "__main__":
     # 5) Verifikasi totals & balance
     t = get_totals(w)
     assert t["total_income"] == 5000000.0
-    assert t["total_expense"] == 500000.0
+    assert t["total_expense"] == 750000.0  # 500rb transactions + 250rb daily_expenses
     assert t["paid_bills"] == 300000.0 and t["unpaid_bills"] == 400000.0
-    assert t["balance_cash"] == 4500000.0
-    assert t["remaining_after_bills"] == 4100000.0
+    assert t["balance_cash"] == 4250000.0
+    assert t["remaining_after_bills"] == 3850000.0
 
     b = compute_balance(w)
-    assert b["saldo_kas"] == 4500000.0
-    assert b["saldo_setelah_komitmen"] == 4100000.0
+    assert b["saldo_kas"] == 4250000.0
+    assert b["saldo_setelah_komitmen"] == 3850000.0
 
-    # 6) Verifikasi health: kewajiban = expense 500rb + tagihan 700rb -> sisa 3.8jt (76% -> HIJAU)
+    # 6) Verifikasi health: kewajiban = expense 750rb + tagihan 700rb -> sisa 3.55jt (71% -> HIJAU)
     r = compute_budget(w)
-    assert r["status"] == "HIJAU" and r["sisa_anggaran"] == 3800000.0
+    assert r["status"] == "HIJAU" and r["sisa_anggaran"] == 3550000.0
 
     # 7) Kasus defisit -> MERAH
     w2 = init_wallet()

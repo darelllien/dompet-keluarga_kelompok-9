@@ -22,19 +22,24 @@ except ImportError:
     print("[FATAL] Modul bills_analytics.py tidak ditemukan. Jalankan dari folder proyek.")
     raise SystemExit(1)
 
-# Modul Adriel bersifat OPSIONAL saat ini (belum diimplementasikan).
-# Gunakan try-import agar aplikasi TETAP berjalan walau modul masih kosong.
+from typing import Any, cast
+
+# Modul Adriel: expense_tracker.py (sudah terimplementasi, di-pull dari origin/main).
+# Gunakan try-import agar aplikasi TETAP berjalan walau modul belum ada.
+expense_tracker: Any = None
+HAS_EXPENSE_TRACKER = False
 try:
-    import expense_tracker
-    # Deteksi apakah modul sudah diisi: minimal harus ada fungsi add_expense
-    HAS_EXPENSE_TRACKER = callable(getattr(expense_tracker, "add_expense", None))
+    import expense_tracker as _et
+    # Deteksi API modul Adriel: fungsi CRUD belanja harian
+    if callable(getattr(_et, "add_daily_expense", None)):
+        expense_tracker = _et
+        HAS_EXPENSE_TRACKER = True
 except ImportError:
-    expense_tracker = None
-    HAS_EXPENSE_TRACKER = False
+    pass
 
 DATA_FILE = "data.json"
 
-from typing import Any, cast
+from typing import Any
 
 
 # ==============================================================================
@@ -164,28 +169,56 @@ def show_balance(wallet):
 
 
 def menu_expense(wallet):
-    """Pencatatan pengeluaran harian -> delegasi ke modul Adriel (jika tersedia)."""
+    """Pencatatan pengeluaran harian -> CRUD asli modul Adriel (expense_tracker)."""
     if not HAS_EXPENSE_TRACKER:
         print("\n[INFO] Modul pencatatan pengeluaran harian (Adriel) BELUM TERSEDIA.")
-        print("       Modul expense_tracker.py masih kosong - fitur ini menyusul.")
+        print("       expense_tracker.py tidak ditemukan - fitur ini menyusul.")
         return
 
-    print("\n[OK] Modul expense_tracker (Adriel) aktif.")
-    # Integration placeholder: sesuaikan dengan API modul Adriel saat dirilis
-    et = expense_tracker
-    et_menu: Any = getattr(et, "menu", None) if et is not None else None
-    et_add: Any = getattr(et, "add_expense", None) if et is not None else None
-    if callable(et_menu):
-        et_menu(wallet)
-    elif callable(et_add):
-        ok, msg = cast(Any, et_add(
-            wallet,
-            amount=input_number("Nominal pengeluaran: Rp "),
-            category=input("Kategori pengeluaran: ").strip(),
-        ))
-        print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
-        if ok:
-            print("  " + finance_core.save_data(wallet, DATA_FILE))
+    while True:
+        print("\n=========== PENGELUARAN HARIAN (ADRIEL) ===========")
+        print("  1. Tambah Belanja Harian")
+        print("  2. Lihat Daftar Belanja")
+        print("  3. Edit Catatan Belanja")
+        print("  4. Hapus Catatan Belanja")
+        print("  0. Kembali ke Menu Utama")
+        print("===================================================")
+
+        choice = input_int("Pilih menu (0-4): ", 0, 4)
+
+        if choice == 1:
+            item = input("Nama item: ").strip()
+            category = input("Kategori: ").strip()
+            amount = input_number("Nominal belanja: Rp ")
+            ok, msg = expense_tracker.add_daily_expense(wallet, item, category, amount)
+            print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
+            if ok:
+                print("  " + finance_core.save_data(wallet, DATA_FILE))
+
+        elif choice == 2:
+            expense_tracker.view_daily_expenses(wallet)
+
+        elif choice == 3:
+            if expense_tracker.view_daily_expenses(wallet):
+                exp_id = input_int("ID belanja yang diedit: ", 1)
+                item = input("Nama item baru: ").strip()
+                category = input("Kategori baru: ").strip()
+                amount = input_number("Nominal baru: Rp ")
+                ok, msg = expense_tracker.update_daily_expense(wallet, exp_id, item, category, amount)
+                print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
+                if ok:
+                    print("  " + finance_core.save_data(wallet, DATA_FILE))
+
+        elif choice == 4:
+            if expense_tracker.view_daily_expenses(wallet):
+                exp_id = input_int("ID belanja yang dihapus: ", 1)
+                ok, msg = expense_tracker.delete_daily_expense(wallet, exp_id)
+                print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
+                if ok:
+                    print("  " + finance_core.save_data(wallet, DATA_FILE))
+
+        elif choice == 0:
+            break
 
 
 # ==============================================================================
