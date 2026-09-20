@@ -22,8 +22,6 @@ except ImportError:
     print("[FATAL] Modul bills_analytics.py tidak ditemukan. Jalankan dari folder proyek.")
     raise SystemExit(1)
 
-from typing import Any, cast
-
 # Modul Adriel: expense_tracker.py (sudah terimplementasi, di-pull dari origin/main).
 # Gunakan try-import agar aplikasi TETAP berjalan walau modul belum ada.
 expense_tracker: Any = None
