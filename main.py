@@ -42,14 +42,13 @@ from typing import Any, cast
 # ==============================================================================
 
 def input_number(prompt):
-    """Ambil input angka float, tolak jika bukan angka."""
+    """Ambil input angka float valid (tolak non-angka, inf/nan, <= 0, > MAX_AMOUNT)."""
     while True:
         raw = input(prompt).strip()
-        try:
-            value = float(raw)
+        ok, value = finance_core.parse_money(raw)
+        if ok:
             return value
-        except ValueError:
-            print("  [ERROR] Masukkan angka yang valid.")
+        print("  [ERROR] Masukkan angka valid (bilangan > 0, maks Rp 1.000.000.000.000).")
 
 
 def input_int(prompt, min_val=None, max_val=None):
@@ -90,7 +89,8 @@ def menu_bills(wallet):
         choice = input_int("Pilih menu (0-6): ", 0, 6)
 
         if choice == 1:
-            bills_analytics.view_monthly_bills(wallet)
+            q = input("Cari nama tagihan (Enter = semua): ").strip()
+            bills_analytics.view_monthly_bills(wallet, q or None)
 
         elif choice == 2:
             name = input("Nama tagihan: ").strip()
@@ -102,14 +102,14 @@ def menu_bills(wallet):
                 print("  " + finance_core.save_data(wallet, DATA_FILE))
 
         elif choice == 3:
-            bill_id = input_int("ID tagihan yang dilunasi: ")
+            bill_id = input_int("ID tagihan yang dilunasi: ", 1)
             ok, msg = bills_analytics.mark_bill_as_paid(wallet, bill_id)
             print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
             if ok:
                 print("  " + finance_core.save_data(wallet, DATA_FILE))
 
         elif choice == 4:
-            bill_id = input_int("ID tagihan yang diedit: ")
+            bill_id = input_int("ID tagihan yang diedit: ", 1)
             name = input("Nama tagihan baru: ").strip()
             amount = input_number("Nominal tagihan baru: Rp ")
             due_day = input_int("Tanggal jatuh tempo baru (1-31): ", 1, 31)
@@ -119,7 +119,7 @@ def menu_bills(wallet):
                 print("  " + finance_core.save_data(wallet, DATA_FILE))
 
         elif choice == 5:
-            bill_id = input_int("ID tagihan yang dihapus: ")
+            bill_id = input_int("ID tagihan yang dihapus: ", 1)
             ok, msg = bills_analytics.delete_monthly_bill(wallet, bill_id)
             print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
             if ok:
@@ -184,7 +184,8 @@ def menu_expense(wallet):
             category=input("Kategori pengeluaran: ").strip(),
         ))
         print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
-        print("  " + finance_core.save_data(wallet, DATA_FILE))
+        if ok:
+            print("  " + finance_core.save_data(wallet, DATA_FILE))
 
 
 # ==============================================================================
@@ -199,6 +200,10 @@ def main():
 
     # Muat data dari persistence layer; jika kosong, buat wallet baru
     wallet = finance_core.load_data(DATA_FILE)
+
+    # Reset status tagihan saat bulan berganti (last_reset_month)
+    if finance_core.reset_monthly_bills_if_needed(wallet):
+        print("\n[INFO] Bulan baru terdeteksi - semua status tagihan di-reset menjadi BELUM DIBAYAR.")
 
     # Smart Alert otomatis saat aplikasi dibuka (modul Darell)
     print("\n[SMART ALERT] Memeriksa tagihan jatuh tempo...")
