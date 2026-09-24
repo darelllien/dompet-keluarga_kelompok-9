@@ -303,7 +303,8 @@ def get_totals(wallet):
     pending_bills = unpaid_bills - overdue_bills  # belum lunas, belum jatuh tempo
 
     # Saldo kas = pemasukan dikurangi yang sudah benar-benar terpakai
-    balance_cash = total_income - total_expense
+    # (pengeluaran harian + tagihan yang sudah lunas dibayar)
+    balance_cash = total_income - total_expense - paid_bills
 
     return {
         "total_income": total_income,
@@ -433,12 +434,12 @@ if __name__ == "__main__":
     assert t["total_income"] == 5000000.0
     assert t["total_expense"] == 750000.0  # 500rb transactions + 250rb daily_expenses
     assert t["paid_bills"] == 300000.0 and t["unpaid_bills"] == 400000.0
-    assert t["balance_cash"] == 4250000.0
-    assert t["remaining_after_bills"] == 3850000.0
+    assert t["balance_cash"] == 3950000.0
+    assert t["remaining_after_bills"] == 3550000.0
 
     b = compute_balance(w)
-    assert b["saldo_kas"] == 4250000.0
-    assert b["saldo_setelah_komitmen"] == 3850000.0
+    assert b["saldo_kas"] == 3950000.0
+    assert b["saldo_setelah_komitmen"] == 3550000.0
 
     # 6) Verifikasi health: kewajiban = expense 750rb + tagihan 700rb -> sisa 3.55jt (71% -> HIJAU)
     r = compute_budget(w)

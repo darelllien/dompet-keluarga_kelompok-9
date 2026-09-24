@@ -191,7 +191,7 @@ def check_due_date_alerts(wallet, current_day=None, current_month=None, current_
               current_month, current_year (int) -> konteks kalender (opsional)
     - PROCESS: Hitung sisa hari dengan logika kalender BENAR:
               - current_day <= due_day  -> jatuh tempo hari ini / bulan ini
-              - current_day >  due_day  -> jatuh tempo BULAN DEPAN (BUKAN EXPIRED palsu)
+              - current_day >  due_day  -> SUDAH LEWAT JATUH TEMPO (EXPIRED)
     - OUTPUT : List berisi pesan peringatan [WARNING MERAH]
     """
 
@@ -217,6 +217,9 @@ def check_due_date_alerts(wallet, current_day=None, current_month=None, current_
             if not isinstance(due, int):
                 continue
 
+            # P4: clamp jatuh tempo ke hari terakhir bulan (due 31 di bulan 30 hari -> tgl 30)
+            due = min(due, days_in_month)
+
             if current_day <= due:
                 # ==============================================================
                 # JATUH TEMPO BULAN INI:
@@ -232,16 +235,15 @@ def check_due_date_alerts(wallet, current_day=None, current_month=None, current_
                     )
             else:
                 # ==============================================================
-                # JATUH TEMPO BULAN DEPAN (cross-month):
-                # OPERATOR ARITMATIKA (+): sisa_hari = (hari_tersisa_bulan_ini) + due_day
+                # SUDAH LEWAT JATUH TEMPO (EXPIRED):
+                # OPERATOR ARITMATIKA (-): days_overdue = hari_ini - tanggal_jatuh_tempo
                 # ==============================================================
-                days_left = (days_in_month - current_day) + due
+                days_overdue = current_day - due  # Tipe Data: int
 
-                if 0 < days_left <= 3:
-                    alerts.append(
-                        f"!!! [WARNING MERAH] Tagihan '{bill['bill_name']}' Rp {bill['amount']:,.2f} "
-                        f"jatuh tempo BULAN DEPAN dalam {days_left} hari (Tanggal {due}) !!!"
-                    )
+                alerts.append(
+                    f"!!! [EXPIRED MERAH] Tagihan '{bill['bill_name']}' "
+                    f"SUDAH LEWAT JATUH TEMPO ({days_overdue} hari yang lalu) !!!"
+                )
 
     # OUTPUT: Kembalikan list kumpulan peringatan
     return alerts
