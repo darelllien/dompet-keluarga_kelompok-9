@@ -93,7 +93,7 @@ def view_monthly_bills(wallet, search=None):
     # PROCESS: Perulangan (looping) untuk mengambil tiap data tagihan
     for b in bills:
         # OPERATOR RELASIONAL (==): Ubah boolean True/False jadi teks "LUNAS" / "BELUM DIBAYAR"
-        status_str = "LUNAS" if b.get("is_paid") == True else "BELUM DIBAYAR"  # Tipe Data: str
+        status_str = "LUNAS" if b.get("is_paid") else "BELUM DIBAYAR"  # Tipe Data: str
 
         # OUTPUT: Cetak baris data tagihan yang rapi
         print(f"{b['bill_id']:<3} | {b['bill_name']:<17} | Tgl {b['due_day']:<7} | Rp {b['amount']:<14,.2f} | {status_str}")

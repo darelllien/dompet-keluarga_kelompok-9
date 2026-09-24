@@ -3,5 +3,8 @@ __pycache__/
 .env
 .vscode/
 
+# Data lokal (jangan di-commit)
+data.json
+
 .DS_Store
 Thumbs.db

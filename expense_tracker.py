@@ -16,7 +16,7 @@ def add_daily_expense(wallet, item_name, category, amount, date_str=None):
     if not ok:
         return False, "Error: Nominal belanja harian harus angka valid (> 0, bukan inf/nan, maks Rp 1.000.000.000.000,00)."
         
-    if not date_str or date_str.strip() == "":
+    if not date_str or not date_str.strip():
         date_str = datetime.now().strftime("%A, %Y-%m-%d")
         
     exp_id = max(
