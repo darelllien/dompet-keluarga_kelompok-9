@@ -48,6 +48,47 @@ dompet-keluarga_kelompok-9/
 
 ---
 
+## 🚀 Cara Menjalankan
+
+Pastikan **Python 3** terpasang, lalu jalankan dari folder proyek:
+
+### 1. Menjalankan Aplikasi Utama
+
+```bash
+py main.py
+```
+
+Saat aplikasi dibuka:
+- Data otomatis dimuat dari `data.json` (dibuat baru jika belum ada).
+- Status tagihan bulanan di-reset otomatis jika bulan berganti.
+- Smart Alert H-3 langsung memeriksa tagihan jatuh tempo.
+
+### 2. Self-Check (Tes Otomatis)
+
+Uji mandiri **Smart Alert Engine** (modul `bills_analytics.py`) dengan tanggal simulasi:
+
+```bash
+py main.py --self-check
+```
+
+Output sukses: `SELF-CHECK PASS: ...` (exit code `0`).
+
+### 3. Self-Check Finance Core
+
+Uji mandiri **core engine** (`finance_core.py`) — inisialisasi skema, konsolidasi pemasukan, kalkulasi balance & kesehatan anggaran:
+
+```bash
+py finance_core.py
+```
+
+### 4. Menyimpan Data (Ctrl+C)
+
+Semua perubahan tersimpan otomatis ke `data.json` saat:
+- Keluar normal lewat menu **0. Keluar**, atau
+- Tekan **Ctrl+C** (atau EOF) kapan saja — aplikasi menyimpan data terakhir **sebelum** keluar (`[INFO] Keluar paksa (Ctrl+C / EOF) - menyimpan data terakhir...`).
+
+---
+
 ## 📝 Log Kontribusi Individu (Individual Contribution Log)
 
 ### 👤 **Darell Damiri (Dev 2)**

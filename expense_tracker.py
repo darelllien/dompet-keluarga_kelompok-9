@@ -8,6 +8,10 @@ from finance_core import parse_money
 
 def add_daily_expense(wallet, item_name, category, amount, date_str=None):
     """Mencatat transaksi belanja harian langsung ke daftar rekap."""
+    if not item_name or not item_name.strip():
+        return False, "Error: Nama item tidak boleh kosong."
+    if not category or not category.strip():
+        return False, "Error: Kategori tidak boleh kosong."
     ok, amount = parse_money(amount)
     if not ok:
         return False, "Error: Nominal belanja harian harus angka valid (> 0, bukan inf/nan, maks Rp 1.000.000.000.000,00)."
@@ -91,11 +95,10 @@ def main_menu():
             
             # Input validation loop untuk nominal
             while True:
-                try:
-                    amount = float(input("Nominal (Rp): "))
+                ok, amount = parse_money(input("Nominal (Rp): "))
+                if ok:
                     break
-                except ValueError:
-                    print("Error: Harap masukkan angka yang valid!")
+                print("Error: Nominal harus angka valid (> 0, bukan inf/nan, maks Rp 1.000.000.000.000,00).")
                     
             date_str = input("Tanggal (opsional, tekan Enter untuk hari ini): ")
             success, msg = add_daily_expense(wallet, item, category, amount, date_str)
@@ -110,7 +113,11 @@ def main_menu():
                     exp_id = int(input("\nMasukkan ID yang ingin diedit: "))
                     item = input("Nama Item Baru: ")
                     cat = input("Kategori Baru: ")
-                    amount = float(input("Nominal Baru (Rp): "))
+                    while True:
+                        ok, amount = parse_money(input("Nominal Baru (Rp): "))
+                        if ok:
+                            break
+                        print("Error: Nominal harus angka valid (> 0, bukan inf/nan, maks Rp 1.000.000.000.000,00).")
                     success, msg = update_daily_expense(wallet, exp_id, item, cat, amount)
                     print(msg)
                 except ValueError:

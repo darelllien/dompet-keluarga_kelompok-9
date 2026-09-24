@@ -219,14 +219,26 @@ def reset_monthly_bills_if_needed(wallet, now=None):
 
 def save_data(wallet, path="data.json"):
     """
-    Fitur 3: Simpan Data ke File Persistence (Write)
+    Fitur 3: Simpan Data ke File Persistence (Write) - ATOMIC
     - INPUT  : wallet (dict), path (str)
-    - PROCESS: Serialisasi wallet ke JSON dengan format rapi (indent 2)
-    - OUTPUT : Pesan konfirmasi tersimpan (str)
+    - PROCESS: Tulis ke file temp lalu os.replace (atomic), sehingga data
+              tidak korup bila proses terputus di tengah penulisan.
+    - OUTPUT : Pesan konfirmasi tersimpan (str); gagal -> pesan error (str),
+              TIDAK melempar OSError.
     """
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(wallet, f, indent=2, ensure_ascii=False)
-    return "Data berhasil disimpan ke data.json."
+    tmp_path = path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(wallet, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return f"Error: Data gagal disimpan ke {path}: {exc}"
+    return f"Data berhasil disimpan ke {path}."
 
 
 # ==============================================================================
@@ -262,10 +274,12 @@ def add_income(wallet, amount, source="Pemasukan"):
 # ENGINE KALKULASI FINANSIAL (CORE CALCULATION)
 # ==============================================================================
 
-def get_totals(wallet):
+def get_totals(wallet, today_day=None):
     """
     Fitur 5: Hitung Total-Total Keuangan (Read - Kalkulasi)
     - PROCESS: Akumulasi pemasukan, pengeluaran harian, dan tagihan (paid/unpaid)
+    - INPUT  : today_day (int|None) -> tanggal "hari ini" untuk penilaian overdue;
+              None = datetime.now().day (injectable agar test deterministik)
     - OUTPUT : dict berisi ringkasan seluruh total (dipakai modul lain & main.py)
     """
     # Konsolidasi pemasukan: ambil dari akumulator utama
@@ -297,7 +311,7 @@ def get_totals(wallet):
         total_bills += amt
         if b.get("is_paid"):
             paid_bills += amt
-        elif is_due_passed(b.get("due_day")):
+        elif is_due_passed(b.get("due_day"), today_day):
             overdue_bills += amt
     unpaid_bills = total_bills - paid_bills
     pending_bills = unpaid_bills - overdue_bills  # belum lunas, belum jatuh tempo
@@ -496,6 +510,7 @@ if __name__ == "__main__":
     assert clean["monthly_bills"][0]["bill_id"] == 1
 
     # 12) Pemisahan pending vs overdue di get_totals / compute_balance
+    # Deterministik: injeksi today_day=15 (bukan datetime.now) -> stabil hari apa pun.
     wb = init_wallet()
     wb["income"] = 1000000.0
     wb["monthly_bills"] = [
@@ -503,13 +518,11 @@ if __name__ == "__main__":
         {"bill_id": 2, "bill_name": "Due 31", "amount": 200000, "due_day": 31, "is_paid": False},
         {"bill_id": 3, "bill_name": "Lunas", "amount": 300000, "due_day": 1, "is_paid": True},
     ]
-    tb = get_totals(wb)
-    # Today ada-ada di bulan berjalan; asumsi today.day > 1 dan < 31 SAAAT self-check dijalankan.
-    # (Validasi relatif, bukan absolut.)
+    tb = get_totals(wb, today_day=15)
     assert tb["paid_bills"] == 300000.0
     assert tb["unpaid_bills"] == 300000.0
-    assert tb["overdue_bills"] + tb["pending_bills"] == tb["unpaid_bills"]
-    assert tb["overdue_bills"] >= 0.0 and tb["pending_bills"] >= 0.0
+    # due 1 < 15 -> overdue; due 31 > 15 -> masih pending
+    assert tb["overdue_bills"] == 100000.0 and tb["pending_bills"] == 200000.0
     cb = compute_balance(wb)
     assert cb["komitmen_terlambat"] + cb["komitmen_menunggu"] == cb["komitmen_belum_lunas"]
 
