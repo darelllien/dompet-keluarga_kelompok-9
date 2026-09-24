@@ -235,6 +235,25 @@ def main():
         # Muat data dari persistence layer; jika kosong, buat wallet baru
         wallet = finance_core.load_data(DATA_FILE)
 
+        # Onboarding SEKALI: bila profile.nama kosong, isi nama + pemasukan
+        # bulanan lalu langsung simpan. Setelah ini profil selalu terisi.
+        if not ((wallet.get("profile") or {}).get("nama") or "").strip():
+            print("\n[ONBOARDING] Selamat datang! Lengkapi profil akun dulu ya.")
+            while True:
+                nama = input("Nama Anda: ").strip()
+                if nama:
+                    break
+                print("  [ERROR] Nama tidak boleh kosong.")
+            while True:
+                ok, pemasukan = finance_core.parse_money(input("Pemasukan bulanan Anda: Rp "))
+                if ok:
+                    break
+                print("  [ERROR] Masukkan angka valid (bilangan > 0, maks Rp 1.000.000.000.000).")
+            wallet["profile"]["nama"] = nama
+            wallet["profile"]["pemasukan_bulanan"] = pemasukan
+            print(f"  [OK] Profil tersimpan untuk {nama}.")
+            print("  " + finance_core.save_data(wallet, DATA_FILE))
+
         # Reset status tagihan saat bulan berganti (last_reset_month)
         if finance_core.reset_monthly_bills_if_needed(wallet):
             print("\n[INFO] Bulan baru terdeteksi - semua status tagihan di-reset menjadi BELUM DIBAYAR.")
@@ -244,7 +263,11 @@ def main():
         show_alerts(wallet)
 
         while True:
-            print("\n=================== MENU UTAMA ===================")
+            nama = (wallet.get("profile") or {}).get("nama", "").strip()
+            if nama:
+                print(f"\n======== MENU UTAMA - Halo, {nama}! =========")
+            else:
+                print("\n=================== MENU UTAMA ===================")
             print("  1. Tambah Pemasukan")
             print("  2. Ringkasan Keuangan")
             print("  3. Kesehatan Anggaran (HIJAU/KUNING/MERAH)")
@@ -257,7 +280,9 @@ def main():
 
             if choice == 1:
                 amount = input_number("Nominal pemasukan: Rp ")
-                source = input("Sumber pemasukan (mis. Gaji, THR): ").strip() or "Pemasukan"
+                nama = (wallet.get("profile") or {}).get("nama", "").strip()
+                default_source = f"Gaji bulanan {nama}".strip() if nama else "Gaji bulanan"
+                source = input(f"Sumber pemasukan (Enter = {default_source}): ").strip() or default_source
                 ok, msg = finance_core.add_income(wallet, amount, source)
                 print(f"  {'[OK]' if ok else '[GAGAL]'} {msg}")
                 if ok:
@@ -268,7 +293,8 @@ def main():
 
             elif choice == 3:
                 report = finance_core.compute_budget(wallet)
-                finance_core.display_budget_report(report)
+                nama = (wallet.get("profile") or {}).get("nama", "")
+                finance_core.display_budget_report(report, nama)
 
             elif choice == 4:
                 menu_bills(wallet)
@@ -331,8 +357,38 @@ def _self_check():
         any("dalam 0 hari" in x for x in a4), \
         f"FAIL clamp: alert tidak muncul: {a4}"
 
+    # 5) Profil: migrasi wallet lama, kondisi onboarding nama kosong,
+    #    prefill default source "Gaji bulanan {nama}", parse pemasukan_bulanan.
+    old = {"income": 1000.0, "transactions": [], "daily_expenses": [], "monthly_bills": []}
+    mig = finance_core.sanitize_wallet(old)
+    assert mig.get("profile") == {"nama": "", "pemasukan_bulanan": 0.0}, \
+        f"FAIL migrasi wallet lama: {mig.get('profile')!r}"
+
+    # Kondisi onboarding di startup: nama kosong -> wajib lengkapi profil sekali
+    need_onboard = not ((mig.get("profile") or {}).get("nama") or "").strip()
+    assert need_onboard is True, "FAIL: nama kosong harus memicu onboarding"
+    done = {"profile": {"nama": "Budi", "pemasukan_bulanan": 5000000.0}}
+    need_onboard2 = not ((done.get("profile") or {}).get("nama") or "").strip()
+    assert need_onboard2 is False, "FAIL: nama terisi jangan onboarding ulang"
+
+    # Prefill default source saat menu Tambah Pemasukan
+    nama_budi = (done.get("profile") or {}).get("nama", "").strip()
+    default_source = f"Gaji bulanan {nama_budi}".strip() if nama_budi else "Gaji bulanan"
+    assert default_source == "Gaji bulanan Budi", f"FAIL prefill: {default_source!r}"
+    nama_none = (mig.get("profile") or {}).get("nama", "").strip()
+    default_source2 = f"Gaji bulanan {nama_none}".strip() if nama_none else "Gaji bulanan"
+    assert default_source2 == "Gaji bulanan", f"FAIL prefill kosong: {default_source2!r}"
+
+    # pemasukan_bulanan: reuse parse_money (valid diterima, invalid ditolak)
+    ok_pb, pb = finance_core.parse_money("7500000")
+    assert ok_pb and pb == 7500000.0, "FAIL: parse pemasukan_bulanan valid"
+    assert finance_core.parse_money("-5")[0] is False, "FAIL: negatif harus ditolak"
+    assert finance_core.parse_money(finance_core.MAX_AMOUNT + 1)[0] is False, \
+        "FAIL: nominal raksasa harus ditolak"
+
     print("SELF-CHECK PASS: H-2/H-0 warning, lewat due_day [EXPIRED MERAH], "
-          "tagihan lunas diabaikan, due 31 di-clamp.")
+          "tagihan lunas diabaikan, due 31 di-clamp, "
+          "profil (migrasi/onboarding/prefill/parse) OK.")
     return 0
 
 

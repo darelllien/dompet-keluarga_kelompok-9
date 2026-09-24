@@ -89,6 +89,11 @@ def init_wallet():
         "monthly_bills": [],     # list dict   -> tagihan bulanan (Dev 2: Darell)
         "income": 0.0,           # float       -> total pemasukan terkonsolidasi (Lead)
         "last_reset_month": None,  # str "YYYY-MM" -> penanda reset status tagihan tiap bulan
+        # Profil akun: nama pemilik & pemasukan bulanan (label report + default sumber income)
+        "profile": {
+            "nama": "",
+            "pemasukan_bulanan": 0.0,
+        },
     }
 
 
@@ -141,6 +146,30 @@ def sanitize_wallet(wallet):
     else:
         log(f"income tidak valid ({inc!r}) -> direset 0.0")
         wallet["income"] = 0.0
+
+    # --- profile: migrasi wallet lama (tanpa key profile) + validasi tipe ---
+    profile = wallet.get("profile")
+    if not isinstance(profile, dict):
+        if profile is not None:
+            log(f"profile tidak valid ({profile!r}) -> dibuat baru")
+        profile = {}
+        wallet["profile"] = profile
+    # nama: harus str, selain itu kosongkan
+    nama = profile.get("nama")
+    if isinstance(nama, str):
+        profile["nama"] = nama.strip()
+    else:
+        if nama not in (None, ""):
+            log(f"profile.nama tidak valid ({nama!r}) -> dikosongkan")
+        profile["nama"] = ""
+    # pemasukan_bulanan: reuse parse_money (tolak <=0/inf/nan/raksasa)
+    ok_pb, pb = parse_money(profile.get("pemasukan_bulanan"))
+    if ok_pb and pb is not None:
+        profile["pemasukan_bulanan"] = float(pb)
+    else:
+        if profile.get("pemasukan_bulanan") not in (None, 0, 0.0, ""):
+            log(f"profile.pemasukan_bulanan tidak valid -> direset 0.0")
+        profile["pemasukan_bulanan"] = 0.0
 
     # --- transactions: harus list, item dict dgn amount angka finite ---
     if not isinstance(wallet.get("transactions"), list):
@@ -245,11 +274,13 @@ def save_data(wallet, path="data.json"):
 # KONSOLIDASI PEMASUKAN (INCOME)
 # ==============================================================================
 
-def add_income(wallet, amount, source="Pemasukan"):
+def add_income(wallet, amount, source=""):
     """
     Fitur 4: Tambah & Konsolidasi Pemasukan
-    - INPUT  : amount (float), source (str) keterangan sumber dana
+    - INPUT  : amount (float), source (str) keterangan sumber dana;
+              kosong -> otomatis "Gaji bulanan {nama}" dari profile wallet
     - PROCESS: Validasi nominal, akumulasi ke wallet["income"], catat di transaksi
+              (dengan tanggal %Y-%m-%d)
     - OUTPUT : (status bool, pesan str)
     """
     ok, amount = parse_money(amount)
@@ -257,14 +288,21 @@ def add_income(wallet, amount, source="Pemasukan"):
     if not ok:
         return False, "Error: Nominal pemasukan harus angka valid (> 0, bukan inf/nan, maks Rp 1.000.000.000.000,00)."
 
+    # Default sumber: "Gaji bulanan {nama}" bila source kosong / nama profile ada
+    source = str(source).strip()
+    if not source:
+        nama = (wallet.get("profile") or {}).get("nama", "").strip()
+        source = f"Gaji bulanan {nama}".strip() if nama else "Gaji bulanan"
+
     # OPERATOR ARITMATIKA (+): Konsolidasi pemasukan ke saldo total
     wallet["income"] += amount
 
     # Catat riwayat pemasukan di transactions (tipe khusus "income")
     wallet["transactions"].append({
         "type": "income",
-        "source": str(source).strip(),
+        "source": source,
         "amount": amount,
+        "date": datetime.now().strftime("%Y-%m-%d"),
     })
 
     return True, f"Pemasukan Rp {amount:,.2f} ({source}) berhasil dicatat. Total pemasukan: Rp {wallet['income']:,.2f}."
@@ -401,15 +439,17 @@ def compute_budget(wallet):
     }
 
 
-def display_budget_report(report):
+def display_budget_report(report, nama=""):
     """
     Fitur 8: Cetak Laporan Kesehatan Anggaran ke Layar
-    - INPUT  : report (dict) hasil compute_budget()
+    - INPUT  : report (dict) hasil compute_budget(); nama (str) label profil bila ada
     - PROCESS: Format hasil kalkulasi menjadi tabel ringkas
     - OUTPUT : - (mencetak langsung ke layar)
     """
     status_icon = {"HIJAU": "[HIJAU] AMAN", "KUNING": "[KUNING] WASPADA", "MERAH": "[MERAH] DEFISIT"}
     print("\n=============== LAPORAN KESEHATAN ANGGARAN ===============")
+    if nama:
+        print(f"  Profil                 : {nama}")
     print(f"  Total Pemasukan       : Rp {report['total_pemasukan']:,.2f}")
     print(f"  Total Kewajiban       : Rp {report['total_kewajiban']:,.2f}")
     print(f"  Sisa Anggaran         : Rp {report['sisa_anggaran']:,.2f}")
@@ -428,7 +468,8 @@ if __name__ == "__main__":
 
     # 1) Inisialisasi skema
     w = init_wallet()
-    assert w == {"transactions": [], "daily_expenses": [], "monthly_bills": [], "income": 0.0, "last_reset_month": None}
+    assert w == {"transactions": [], "daily_expenses": [], "monthly_bills": [], "income": 0.0, "last_reset_month": None,
+                 "profile": {"nama": "", "pemasukan_bulanan": 0.0}}
 
     # 2) Konsolidasi pemasukan
     ok, msg = add_income(w, 5000000, "Gaji")
@@ -541,5 +582,49 @@ if __name__ == "__main__":
     wm = init_wallet()
     assert add_income(wm, MAX_AMOUNT + 1)[0] is False
     assert add_income(wm, float("inf"))[0] is False
+
+    # 15) Profile: migrasi wallet lama + validasi sanitize_wallet
+    old = {"income": 1000.0, "transactions": [], "daily_expenses": [], "monthly_bills": []}  # tanpa key profile
+    mig = sanitize_wallet(old)
+    assert mig["profile"] == {"nama": "", "pemasukan_bulanan": 0.0}
+    bad_prof = {"income": 0.0, "transactions": [], "daily_expenses": [], "monthly_bills": [],
+                "profile": {"nama": 123, "pemasukan_bulanan": -5}}
+    assert sanitize_wallet(bad_prof)["profile"] == {"nama": "", "pemasukan_bulanan": 0.0}
+    good_prof = {"income": 0.0, "transactions": [], "daily_expenses": [], "monthly_bills": [],
+                 "profile": {"nama": "  Budi  ", "pemasukan_bulanan": "7500000"}}
+    gp = sanitize_wallet(good_prof)["profile"]
+    assert gp["nama"] == "Budi" and gp["pemasukan_bulanan"] == 7500000.0
+    # pemasukan_bulanan raksasa / bukan angka -> reset 0.0 (parse_money reuse)
+    huge_prof = {"income": 0.0, "transactions": [], "daily_expenses": [], "monthly_bills": [],
+                 "profile": {"nama": "X", "pemasukan_bulanan": MAX_AMOUNT + 1}}
+    assert sanitize_wallet(huge_prof)["profile"]["pemasukan_bulanan"] == 0.0
+
+    # 16) add_income: source kosong -> "Gaji bulanan {nama}", tx punya date "%Y-%m-%d"
+    wp = init_wallet()
+    wp["profile"]["nama"] = "Siti"
+    ok, _ = add_income(wp, 2000000)
+    assert ok and wp["transactions"][-1]["source"] == "Gaji bulanan Siti"
+    assert wp["transactions"][-1]["date"] == datetime.now().strftime("%Y-%m-%d")
+    w0 = init_wallet()  # tanpa nama -> "Gaji bulanan"
+    ok, _ = add_income(w0, 1000)
+    assert ok and w0["transactions"][-1]["source"] == "Gaji bulanan"
+    # source eksplisit tetap dipakai
+    ok, _ = add_income(w0, 1000, "THR")
+    assert ok and w0["transactions"][-1]["source"] == "THR"
+
+    # 17) display_budget_report: nama profil dicetak sebagai label; nama kosong
+    #     -> baris "Profil" tidak boleh muncul (biarkan cetakan biasa)
+    import contextlib as _ctx
+    import io as _io
+    _buf = _io.StringIO()
+    with _ctx.redirect_stdout(_buf):
+        display_budget_report(compute_budget(init_wallet()), nama="Budi")
+    assert "Budi" in _buf.getvalue() and "Profil" in _buf.getvalue(), \
+        f"FAIL: nama tidak tampil di report: {_buf.getvalue()!r}"
+    _buf2 = _io.StringIO()
+    with _ctx.redirect_stdout(_buf2):
+        display_budget_report(compute_budget(init_wallet()), nama="")
+    assert "Profil" not in _buf2.getvalue(), \
+        f"FAIL: nama kosong tetap mencetak baris Profil: {_buf2.getvalue()!r}"
 
     print("[PASS] Semua assertion finance_core lolos.")

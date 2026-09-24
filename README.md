@@ -60,6 +60,7 @@ py main.py
 
 Saat aplikasi dibuka:
 - Data otomatis dimuat dari `data.json` (dibuat baru jika belum ada).
+- **Onboarding profil SEKALI:** jika `profile.nama` masih kosong (wallet baru / migrasi dari versi lama), aplikasi meminta **nama** + **pemasukan bulanan**. Setelah tersimpan, onboarding tidak muncul lagi.
 - Status tagihan bulanan di-reset otomatis jika bulan berganti.
 - Smart Alert H-3 langsung memeriksa tagihan jatuh tempo.
 
@@ -86,6 +87,46 @@ py finance_core.py
 Semua perubahan tersimpan otomatis ke `data.json` saat:
 - Keluar normal lewat menu **0. Keluar**, atau
 - Tekan **Ctrl+C** (atau EOF) kapan saja — aplikasi menyimpan data terakhir **sebelum** keluar (`[INFO] Keluar paksa (Ctrl+C / EOF) - menyimpan data terakhir...`).
+
+---
+
+## 👤 Profil Akun & Onboarding (Project Lead)
+
+Profil akun (`wallet["profile"]`) menyimpan `nama` (str) dan `pemasukan_bulanan` (float). Dipakai untuk menyapa pengguna, prefill sumber pemasukan, dan label laporan.
+
+### Onboarding Sekali
+
+Saat pertama kali dijalankan (atau wallet lama tanpa `profile`), aplikasi meminta **nama** + **pemasukan bulanan** sekali lalu menyimpan:
+
+```text
+[ONBOARDING] Selamat datang! Lengkapi profil akun dulu ya.
+Nama Anda: Budi
+Pemasukan bulanan Anda: Rp 7500000
+```
+
+- Nama tidak boleh kosong (dipinta ulang sampai terisi).
+- `pemasukan_bulanan` divalidasi lewat `parse_money` (tolak `<= 0`, `inf/nan`, `> 1e12`, non-angka).
+- Setelah profil terisi, onboarding tidak muncul lagi di sesi berikutnya.
+
+### Prefill "Gaji Bulanan"
+
+Saat menu **1. Tambah Pemasukan**, sumber pemasukan di-prefill otomatis:
+
+- `profile.nama` terisi → `Sumber pemasukan (Enter = Gaji bulanan Budi):`
+- `profile.nama` kosong → `Sumber pemasukan (Enter = Gaji bulanan):`
+
+### Relasi Profil ke 6 Titik Kode
+
+| Titik | Lokasi | Peran Profil |
+| :---- | :----- | :----------- |
+| **init** | `finance_core.init_wallet()` | Skema default `profile: {"nama": "", "pemasukan_bulanan": 0.0}` |
+| **sanitize** | `finance_core.sanitize_wallet()` | Migrasi wallet lama (tanpa key `profile`) + validasi tipe & nominal (`parse_money`) |
+| **add_income** | `finance_core.add_income()` | Prefill default source `"Gaji bulanan {nama}"` bila `source` kosong |
+| **report** | `finance_core.display_budget_report()` | Label `Profil : {nama}` pada laporan kesehatan anggaran |
+| **startup** | `main.py` → `main()` | Onboarding sekali bila `profile.nama` kosong |
+| **menu** | `main.py` menu utama | Sapaan `Halo, {nama}!` + prefill prompt sumber pemasukan |
+
+> Self-check profil: `py finance_core.py` (assertions #15–#17: migrasi, parse, report) dan `py main.py --self-check` (migrasi, kondisi onboarding, prefill, parse).
 
 ---
 
