@@ -132,6 +132,16 @@ def mark_bill_as_paid(wallet, bill_id):
     return False, f"Error: Tagihan dengan ID {bill_id} tidak ditemukan."
 
 
+def unmark_bill_as_paid(wallet, bill_id):
+    """
+    Fitur 3b: Batal Lunasi Tagihan (Undo Pelunasan)
+    - INPUT  : bill_id (int)
+    - PROCESS: Panggil finance_core.unmark_bill_payment untuk sinkronisasi status & ledger
+    - OUTPUT : (status: bool, pesan: str)
+    """
+    return finance_core.unmark_bill_payment(wallet, bill_id)
+
+
 def update_monthly_bill(wallet, bill_id, new_name, new_amount, new_due_day):
     """
     Fitur 4: Edit/Perbarui Data Tagihan (Update Data)
@@ -153,6 +163,15 @@ def update_monthly_bill(wallet, bill_id, new_name, new_amount, new_due_day):
             ok_day, new_due_day = finance_core.parse_day(new_due_day)
             if not ok_money or not ok_day:
                 return False, "Error: Nominal & tanggal jatuh tempo baru tidak valid."
+
+            # PERLINDUNGAN LEDGER: Jika tagihan sudah lunas, larang perubahan nominal
+            # agar catatan uang yang keluar di ledger kas tetap konsisten dengan komitmen.
+            if bill.get("is_paid") and abs(float(bill.get("amount", 0.0)) - new_amount) > 1e-4:
+                return False, (
+                    f"Error: Tagihan '{bill.get('bill_name')}' sudah berstatus LUNAS. "
+                    "Nominal tidak boleh diubah langsung agar saldo kas dan pembukuan konsisten. "
+                    "Gunakan fitur 'Batal Pelunasan Tagihan' terlebih dahulu jika ingin mengganti nominal."
+                )
 
             # PROCESS: Timpa variabel lama dengan data baru
             bill["bill_name"] = name  # Tipe Data: str
@@ -247,3 +266,43 @@ def check_due_date_alerts(wallet, current_day=None, current_month=None, current_
 
     # OUTPUT: Kembalikan list kumpulan peringatan
     return alerts
+
+
+# ==============================================================================
+# TES MANDIRI (SELF-CHECK) - Jalan: py bills_analytics.py
+# ==============================================================================
+
+if __name__ == "__main__":
+    print("[SELF-CHECK] bills_analytics.py")
+    w = {"monthly_bills": []}
+
+    # 1. Tambah tagihan
+    ok, msg = add_monthly_bill(w, "Listrik", 250000, 15)
+    assert ok and len(w["monthly_bills"]) == 1
+    assert w["monthly_bills"][0]["bill_name"] == "Listrik"
+
+    # 2. Pelunasan
+    ok, msg = mark_bill_as_paid(w, 1)
+    assert ok and w["monthly_bills"][0]["is_paid"] is True
+
+    # 3. Proteksi edit nominal tagihan yang sudah lunas
+    ok, msg = update_monthly_bill(w, 1, "Listrik Rumah", 300000, 15)
+    assert ok is False and "LUNAS" in msg
+
+    # 4. Edit non-nominal (nama/tanggal) tetap diizinkan
+    ok, msg = update_monthly_bill(w, 1, "Listrik Rumah", 250000, 16)
+    assert ok and w["monthly_bills"][0]["bill_name"] == "Listrik Rumah"
+
+    # 5. Batal pelunasan (undo)
+    ok, msg = unmark_bill_as_paid(w, 1)
+    assert ok and w["monthly_bills"][0]["is_paid"] is False
+
+    # 6. Setelah batal lunas, nominal boleh diedit kembali
+    ok, msg = update_monthly_bill(w, 1, "Listrik Rumah", 300000, 15)
+    assert ok and w["monthly_bills"][0]["amount"] == 300000.0
+
+    # 7. Hapus
+    ok, msg = delete_monthly_bill(w, 1)
+    assert ok and len(w["monthly_bills"]) == 0
+
+    print("[PASS] Semua assertion bills_analytics lolos.")

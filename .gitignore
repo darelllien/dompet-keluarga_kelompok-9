@@ -5,6 +5,9 @@ __pycache__/
 
 # Data lokal (jangan di-commit)
 data.json
+data.json.bak
+data.json.tmp
+data.json*
 
 .DS_Store
 Thumbs.db
